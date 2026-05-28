@@ -1,0 +1,9 @@
+{
+  "venvPath": "/home/sontran/Spotify Audio-Feature Recommender",
+  "venv": ".venv",
+  "typeCheckingMode": "off",
+  "extraPaths": [
+    "/home/sontran/Spotify Audio-Feature Recommender/src",
+    "/home/sontran/Spotify Audio-Feature Recommender/.venv/lib/python3.12/site-packages"
+  ]
+}

@@ -1,0 +1,12 @@
+spotipy
+pymongo
+python-dotenv
+pandas
+numpy
+scikit-learn
+pyspark==3.5.0
+streamlit
+plotly
+umap-learn
+joblib
+requests

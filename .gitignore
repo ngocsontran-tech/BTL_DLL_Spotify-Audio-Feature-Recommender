@@ -1,0 +1,22 @@
+# Virtual environment
+.venv/
+venv/
+
+# Environment secrets
+.env
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.cache
+.cache/
+
+# IDE / VS Code configurations
+.vscode/settings.json
+
+# OS specific files
+.DS_Store
+Thumbs.db
