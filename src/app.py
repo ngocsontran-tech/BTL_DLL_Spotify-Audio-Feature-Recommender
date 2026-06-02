@@ -174,7 +174,7 @@ popular_tracks = get_popular_tracks_list()
 
 # Title banner
 st.markdown("<h1 style='text-align: center;'>🎵 Spotify <span class='highlight'>Audio-Feature</span> Recommender</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align: center; color: #b3b3b3;'>Hệ thống phân cụm (Spark K-Means) và gợi ý âm nhạc trực quan đạt chuẩn đánh giá Big Data.</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #b3b3b3;'>Hệ thống phân cụm (Spark K-Means) và gợi ý âm nhạc trực quan.</p>", unsafe_allow_html=True)
 st.markdown("<div class='divider'></div>", unsafe_allow_html=True)
 
 # Sidebar layout
