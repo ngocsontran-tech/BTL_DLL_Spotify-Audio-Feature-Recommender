@@ -152,3 +152,74 @@ Mở trình duyệt truy cập địa chỉ: `http://localhost:8505` để kiể
   * **Cluster 0**: Nhạc Acoustic/Ballad nhịp độ chậm, cảm xúc sâu lắng.
   * **Cluster 1**: Nhạc Pop/R&B hiện đại nhịp độ vừa phải, giai điệu bắt tai.
   * **Cluster 4**: Nhạc Dance/Electronic/Synth-pop sôi động, nhiều năng lượng.
+
+---
+
+## 📝 Lịch Sử Chạy Lệnh Thực Tế (Recorded Execution Logs)
+
+Dưới đây là ghi chép các lệnh thực tế đã được AI thực thi thành công trên hệ thống của bạn để khởi chạy dự án:
+
+1. **Khởi tạo dữ liệu thô (Phase 1):**
+   ```bash
+   .venv/bin/python src/data_collector.py
+   ```
+   *Kết quả:* Nạp thành công `28,356` bài hát vào collection `tracks` trong MongoDB.
+
+2. **Tiền xử lý và chuẩn hóa (Phase 2):**
+   ```bash
+   .venv/bin/python src/preprocessing.py
+   ```
+   *Kết quả:* Làm sạch và xuất tệp Parquet tại `data/processed/tracks_clean.parquet` thành công.
+
+3. **Huấn luyện mô hình K-Means và phân cụm với PySpark (Phase 3):**
+   ```bash
+   .venv/bin/python src/clustering.py
+   ```
+   *Kết quả:* Chạy thành công, tính toán Elbow từ K=2 đến K=10, so sánh Silhouette Score giữa Standard K-Means (0.2983) và Bisecting K-Means (0.2014), cập nhật nhãn cluster vào MongoDB thành công.
+
+4. **Khởi chạy ứng dụng Web Dashboard (Phase 5):**
+   ```bash
+   .venv/bin/streamlit run src/app.py --server.port 8505
+   ```
+   *Kết quả:* Khởi chạy thành công ứng dụng Streamlit trên cổng `8505`.
+
+---
+
+## 🔍 Hướng Dẫn Sửa Lỗi Khi Chạy Clustering (Phase 3)
+
+Nếu bạn chạy lệnh `clustering.py` theo hướng dẫn nhưng gặp lỗi ở bước này, dưới đây là các lỗi phổ biến và cách khắc phục:
+
+1. **Lỗi chưa cài đặt Java (Java Gateway Error / Java not found):**
+   * **Triệu chứng:** Báo lỗi khởi tạo SparkSession, hoặc báo lỗi liên quan đến Py4J / Java Gateway.
+   * **Nguyên nhân:** PySpark yêu cầu Java 11 hoặc Java 17+ để chạy.
+   * **Cách khắc phục:** 
+     Kiểm tra xem hệ thống đã cài Java chưa bằng cách gõ:
+     ```bash
+     java -version
+     ```
+     Nếu chưa cài, hãy cài đặt OpenJDK 17:
+     ```bash
+     sudo apt update
+     sudo apt install openjdk-17-jdk -y
+     ```
+
+2. **Không sử dụng môi trường ảo (ModuleNotFoundError: No module named 'pyspark'):**
+   * **Triệu chứng:** Lỗi import `pyspark` hoặc các thư viện khác như `pymongo`, `pandas`.
+   * **Nguyên nhân:** Chạy bằng Python mặc định của hệ thống thay vì Python của môi trường ảo `.venv`.
+   * **Cách khắc phục:** Hãy chạy đúng đường dẫn Python trong `.venv`:
+     ```bash
+     .venv/bin/python src/clustering.py
+     ```
+     Hoặc kích hoạt môi trường ảo trước khi chạy:
+     ```bash
+     source .venv/bin/activate
+     python src/clustering.py
+     ```
+
+3. **Lỗi thiếu tệp Parquet (Parquet file not found):**
+   * **Triệu chứng:** Báo lỗi không tìm thấy `data/processed/tracks_clean.parquet`.
+   * **Nguyên nhân:** Bỏ qua Bước 2 (`preprocessing.py`) nên dữ liệu đã làm sạch chưa được xuất ra file.
+   * **Cách khắc phục:** Chạy lệnh sau để tạo file Parquet trước:
+     ```bash
+     .venv/bin/python src/preprocessing.py
+     ```

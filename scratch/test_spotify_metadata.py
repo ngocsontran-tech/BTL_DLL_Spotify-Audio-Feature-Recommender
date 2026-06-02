@@ -15,8 +15,9 @@ sp = spotipy.Spotify(auth_manager=auth_manager)
 try:
     results = sp.tracks(["6f807x0ima9a1j3VPbc7VN"])
     print("Success! Track metadata works.")
-    track = results['tracks'][0]
-    print(f"Name: {track['name']}")
-    print(f"Cover URL: {track['album']['images'][0]['url']}")
+    if results is not None:
+        track = results['tracks'][0]
+        print(f"Name: {track['name']}")
+        print(f"Cover URL: {track['album']['images'][0]['url']}")
 except Exception as e:
     print(f"Error: {e}")

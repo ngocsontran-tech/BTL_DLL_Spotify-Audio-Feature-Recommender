@@ -38,10 +38,42 @@ try:
         client_id=SPOTIFY_CLIENT_ID,
         client_secret=SPOTIFY_CLIENT_SECRET
     )
-    sp = spotipy.Spotify(auth_manager=auth_manager)
+    sp = spotipy.Spotify(auth_manager=auth_manager, retries=0, status_retries=0, status_forcelist=(999,))
 except Exception as e:
     print(f"Error authenticating with Spotify in recommender: {e}")
     sp = None
+
+import time
+
+def spotify_api_call(func, *args, **kwargs):
+    """
+    Wrapper for Spotify API calls. Handles rate limit (429) by reading
+    'Retry-After' header, sleeping for the requested duration, and retrying.
+    """
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            return func(*args, **kwargs)
+        except spotipy.exceptions.SpotifyException as e:
+            if e.http_status == 429:
+                retry_after = 5
+                if e.headers:
+                    for k, v in e.headers.items():
+                        if k.lower() == 'retry-after':
+                            try:
+                                retry_after = int(v)
+                                break
+                            except ValueError:
+                                pass
+                if retry_after > 10:
+                    print(f"Spotify API rate limit retry-after is too large ({retry_after}s). Raising exception immediately.")
+                    raise e
+                print(f"Spotify API 429 Rate Limit. Sleeping for {retry_after} seconds (Attempt {attempt+1}/{max_retries})...")
+                time.sleep(retry_after)
+                continue
+            raise e
+        except Exception as e:
+            raise e
 
 def parse_track_id(url):
     """
@@ -77,9 +109,11 @@ def parse_track_id(url):
         if not sp:
             raise ValueError("Spotify API not initialized. Cannot resolve artist URL.")
         try:
-            artist_info = sp.artist(artist_id)
+            artist_info = spotify_api_call(sp.artist, artist_id)
+            if artist_info is None:
+                raise ValueError(f"Could not fetch artist info for artist ID: {artist_id}")
             artist_name = artist_info['name']
-            search_results = sp.search(q=f'artist:"{artist_name}"', type='track', limit=1)
+            search_results = spotify_api_call(sp.search, q=f'artist:"{artist_name}"', type='track', limit=1)
             if search_results and 'tracks' in search_results and search_results['tracks']['items']:
                 track = search_results['tracks']['items'][0]
                 print(f"Resolved artist URL to their top track: '{track['name']}' by {artist_name} (ID: {track['id']})")
@@ -102,14 +136,19 @@ def parse_track_id(url):
         if not sp:
             raise ValueError("Spotify API not initialized. Cannot resolve album URL.")
         try:
-            album_info = sp.album(album_id)
+            album_info = spotify_api_call(sp.album, album_id)
             if album_info and 'tracks' in album_info and album_info['tracks']['items']:
                 track = album_info['tracks']['items'][0]
                 print(f"Resolved album URL to its first track: '{track['name']}' (ID: {track['id']})")
                 return track['id']
             else:
-                raise ValueError(f"Could not find any tracks in album: {album_info.get('name', album_id)}")
+                album_name = album_info.get('name', album_id) if album_info is not None else album_id
+                raise ValueError(f"Could not find any tracks in album: {album_name}")
         except Exception as e:
+            # Check if rate limit
+            err_str = str(e)
+            if "rate/request limit" in err_str.lower() or "429" in err_str:
+                raise ValueError("Spotify API Rate Limit: Không thể phân tích album do đạt giới hạn yêu cầu từ Spotify.")
             raise ValueError(f"Failed to resolve album URL: {e}")
 
     # 5. Playlist URLs -> User friendly error
@@ -161,7 +200,7 @@ def get_track_metadata_fallback(track_id):
     if sp:
         # Try direct track lookup first (most reliable)
         try:
-            track = sp.track(track_id)
+            track = spotify_api_call(sp.track, track_id)
             if track:
                 return {
                     "track_name": track['name'],
@@ -177,7 +216,7 @@ def get_track_metadata_fallback(track_id):
 
         # Fallback to search query
         try:
-            results = sp.search(q=track_id, type="track", limit=1)
+            results = spotify_api_call(sp.search, q=track_id, type="track", limit=1)
             if results and 'tracks' in results and 'items' in results['tracks'] and results['tracks']['items']:
                 track = results['tracks']['items'][0]
                 if track['id'] == track_id:
@@ -257,7 +296,14 @@ def get_track_features(spotify_url):
         if not cover or cover.startswith('data/covers/'):
             try:
                 real_meta = get_track_metadata_fallback(track_id)
-                track_doc['album_cover_url'] = real_meta.get('album_cover_url') or cover
+                real_cover = real_meta.get('album_cover_url')
+                if real_cover and not real_cover.startswith('data/covers/'):
+                    track_doc['album_cover_url'] = real_cover
+                    # Update MongoDB so we cache this forever!
+                    processed_col.update_one(
+                        {"track_id": track_id},
+                        {"$set": {"album_cover_url": real_cover}}
+                    )
             except Exception:
                 pass
         return track_doc
@@ -343,26 +389,61 @@ def recommend_songs(spotify_url, top_n=10):
 
 def fetch_real_covers(tracks_list):
     """
-    Fetches real album cover URLs from Spotify API for a list of tracks in parallel,
-    updating the 'album_cover_url' field in place.
+    Fetches real album cover URLs from Spotify API for a list of tracks in batch,
+    updating the 'album_cover_url' field in place and caching them in MongoDB.
+    If the batch endpoint (sp.tracks) is forbidden, falls back to individual calls in parallel.
     """
     if not sp:
         return tracks_list
         
-    def update_cover(track_dict):
-        tid = track_dict.get('track_id')
-        if not tid:
-            return
-        try:
-            track_info = sp.track(tid)
-            if track_info and 'album' in track_info and track_info['album'].get('images'):
-                track_dict['album_cover_url'] = track_info['album']['images'][0]['url']
-        except Exception as e:
-            print(f"Warning: Failed to fetch real cover for {tid}: {e}")
-
-    with ThreadPoolExecutor(max_workers=len(tracks_list) or 1) as executor:
-        list(executor.map(update_cover, tracks_list))
+    to_fetch = []
+    for track in tracks_list:
+        cover = track.get('album_cover_url', '')
+        if not cover or cover.startswith('data/covers/'):
+            to_fetch.append(track)
+            
+    if not to_fetch:
+        return tracks_list
         
+    chunk_size = 50
+    for i in range(0, len(to_fetch), chunk_size):
+        chunk = to_fetch[i:i + chunk_size]
+        track_ids = [t['track_id'] for t in chunk]
+        
+        try:
+            response = spotify_api_call(sp.tracks, track_ids)
+            if response and 'tracks' in response:
+                for track_dict, api_track in zip(chunk, response['tracks']):
+                    if api_track and 'album' in api_track and api_track['album'].get('images'):
+                        real_url = api_track['album']['images'][0]['url']
+                        track_dict['album_cover_url'] = real_url
+                        # Cache in MongoDB
+                        processed_col.update_one(
+                            {"track_id": track_dict['track_id']},
+                            {"$set": {"album_cover_url": real_url}}
+                        )
+        except Exception as e:
+            print(f"Warning: Failed to fetch real covers in batch ({e}). Falling back to individual parallel fetching...")
+            
+            # Helper function for individual fetching
+            def fetch_single_cover(track_dict):
+                try:
+                    track_info = spotify_api_call(sp.track, track_dict['track_id'])
+                    if track_info and 'album' in track_info and track_info['album'].get('images'):
+                        real_url = track_info['album']['images'][0]['url']
+                        track_dict['album_cover_url'] = real_url
+                        # Cache in MongoDB
+                        processed_col.update_one(
+                            {"track_id": track_dict['track_id']},
+                            {"$set": {"album_cover_url": real_url}}
+                        )
+                except Exception as single_err:
+                    print(f"Warning: Failed to fetch cover for track {track_dict['track_id']}: {single_err}")
+
+            # Execute in parallel threads to keep it extremely fast
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                executor.map(fetch_single_cover, chunk)
+            
     return tracks_list
 
 if __name__ == "__main__":
