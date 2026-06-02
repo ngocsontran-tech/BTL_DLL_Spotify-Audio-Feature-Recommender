@@ -495,7 +495,8 @@ with tab_map:
                     df_all_tracks, pca_coords,
                     selected_track_id=selected_id,
                     recommended_tracks=recs_list,
-                    plot_type="2D"
+                    plot_type="2D",
+                    pca_model=pca_model
                 )
                 st.plotly_chart(fig_pca, use_container_width=True)
                 
@@ -505,7 +506,8 @@ with tab_map:
                     df_all_tracks, pca_coords,
                     selected_track_id=selected_id,
                     recommended_tracks=recs_list,
-                    plot_type="3D"
+                    plot_type="3D",
+                    pca_model=pca_model
                 )
                 st.plotly_chart(fig_pca, use_container_width=True)
                 
@@ -514,7 +516,8 @@ with tab_map:
                 fig_matplotlib = generate_matplotlib_3d_plot(
                     df_all_tracks, pca_coords,
                     selected_track_id=selected_id,
-                    recommended_tracks=recs_list
+                    recommended_tracks=recs_list,
+                    pca_model=pca_model
                 )
                 if fig_matplotlib:
                     st.pyplot(fig_matplotlib, use_container_width=True)

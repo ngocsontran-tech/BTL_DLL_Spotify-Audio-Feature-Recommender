@@ -77,7 +77,7 @@ def compute_pca(df):
     
     return pca_coords, pca
 
-def generate_cluster_scatter_plot(df, pca_coords, selected_track_id=None, recommended_tracks=None, plot_type="2D"):
+def generate_cluster_scatter_plot(df, pca_coords, selected_track_id=None, recommended_tracks=None, plot_type="2D", pca_model=None):
     """
     Generates a Plotly scatter plot (2D or 3D) of the song cluster space.
     Highlights the selected song and its recommendations, drawing connecting lines.
@@ -94,6 +94,30 @@ def generate_cluster_scatter_plot(df, pca_coords, selected_track_id=None, recomm
     # Map cluster names and colors
     plot_df['cluster_name'] = plot_df['cluster'].map(lambda x: CLUSTER_NAMES.get(x, f"Cluster {x}"))
     
+    # If the selected track is not in the database (e.g. pasted new Spotify link),
+    # project it dynamically using the fitted PCA model.
+    if selected_track_id and selected_track_id not in plot_df['track_id'].values:
+        input_track = st.session_state.get('input_track')
+        if input_track and input_track.get('track_id') == selected_track_id and pca_model is not None:
+            try:
+                x_new = np.array([[input_track[col] for col in FEATURE_COLS]])
+                coords_new = pca_model.transform(x_new)[0]
+                new_row = pd.DataFrame([{
+                    'track_id': selected_track_id,
+                    'track_name': input_track['track_name'],
+                    'artist_name': input_track['artist_name'],
+                    'album_name': input_track['album_name'],
+                    'popularity': input_track['popularity'],
+                    'cluster': input_track['cluster'],
+                    'PCA1': coords_new[0],
+                    'PCA2': coords_new[1],
+                    'PCA3': coords_new[2],
+                    'cluster_name': CLUSTER_NAMES.get(input_track['cluster'], f"Cluster {input_track['cluster']}")
+                }])
+                plot_df = pd.concat([plot_df, new_row], ignore_index=True)
+            except Exception as e:
+                print(f"Error projecting selected track in PCA scatter plot: {e}")
+                
     is_3d = (plot_type == "3D")
     
     # If using 2D (SVG go.Scatter), sample background to 5,000 points to prevent browser freeze
@@ -315,7 +339,7 @@ def generate_elbow_chart():
     
     return fig
 
-def generate_matplotlib_3d_plot(df, pca_coords, selected_track_id=None, recommended_tracks=None):
+def generate_matplotlib_3d_plot(df, pca_coords, selected_track_id=None, recommended_tracks=None, pca_model=None):
     """
     Generates a static 3D scatter plot of the song cluster space using Matplotlib (CPU rendering).
     No WebGL required.
@@ -329,6 +353,29 @@ def generate_matplotlib_3d_plot(df, pca_coords, selected_track_id=None, recommen
     plot_df['PCA1'] = pca_coords[:, 0]
     plot_df['PCA2'] = pca_coords[:, 1]
     plot_df['PCA3'] = pca_coords[:, 2]
+    
+    # If the selected track is not in the database (e.g. pasted new Spotify link),
+    # project it dynamically using the fitted PCA model.
+    if selected_track_id and selected_track_id not in plot_df['track_id'].values:
+        input_track = st.session_state.get('input_track')
+        if input_track and input_track.get('track_id') == selected_track_id and pca_model is not None:
+            try:
+                x_new = np.array([[input_track[col] for col in FEATURE_COLS]])
+                coords_new = pca_model.transform(x_new)[0]
+                new_row = pd.DataFrame([{
+                    'track_id': selected_track_id,
+                    'track_name': input_track['track_name'],
+                    'artist_name': input_track['artist_name'],
+                    'album_name': input_track['album_name'],
+                    'popularity': input_track['popularity'],
+                    'cluster': input_track['cluster'],
+                    'PCA1': coords_new[0],
+                    'PCA2': coords_new[1],
+                    'PCA3': coords_new[2]
+                }])
+                plot_df = pd.concat([plot_df, new_row], ignore_index=True)
+            except Exception as e:
+                print(f"Error projecting selected track in Matplotlib 3D: {e}")
     
     # Sample background to 3,000 points to keep Matplotlib rendering fast
     if len(plot_df) > 3000:
